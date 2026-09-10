@@ -1,13 +1,17 @@
 package com.cqu;
 
 import com.cqu.handler.RequestHandler;
+import com.cqu.model.Edge;
 import com.cqu.service.DataLoader;
 import com.cqu.service.Db;
+import com.cqu.service.GraphImportValidator;
+import com.cqu.service.GraphManager;
 import com.cqu.service.GraphService;
 import com.cqu.service.NodeRepository;
 import com.sun.net.httpserver.HttpServer;
 
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -27,13 +31,17 @@ public class Main {
             logger.log(Level.INFO, "Seeded nodes into database from nodes.csv");
         }
 
-        GraphService graphService = new GraphService(repo.findAllAsMap(), dataLoader.loadEdgeListOrEmpty());
-        RequestHandler handler = new RequestHandler(graphService);
+        List<Edge> edges = dataLoader.loadEdgeListOrEmpty();
+        GraphService graphService = new GraphService(repo.findAllAsMap(), edges);
+        GraphManager graphManager = new GraphManager(graphService, edges, new GraphImportValidator(), repo);
+        RequestHandler handler = new RequestHandler(graphManager);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/api/health", handler::handleHealth);
         server.createContext("/api/nodes", handler::handleNodes);
         server.createContext("/api/path", handler::handlePath);
+        server.createContext("/api/admin/import", handler::handleAdminImport);
+        server.createContext("/api/admin/import/validate", handler::handleAdminImportValidate);
         server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
         server.start();
         logger.log(Level.INFO, "Backend started on port " + port);
