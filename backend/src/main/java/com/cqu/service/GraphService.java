@@ -14,28 +14,44 @@ import java.util.PriorityQueue;
 import java.util.Set;
 
 public class GraphService {
-    private final Map<String, Node> nodes;
-    private final Map<String, List<Neighbor>> adjacency;
+    /** 当前图快照（节点 + 邻接表），整体 volatile 替换，保证导入更新与并发查询互不干扰。 */
+    private volatile GraphState state;
 
     public GraphService(Map<String, Node> nodes) {
-        this.nodes = Map.copyOf(nodes);
-        this.adjacency = buildGraph(this.nodes);
+        this(nodes, null);
     }
 
     public GraphService(Map<String, Node> nodes, List<Edge> edges) {
-        this.nodes = Map.copyOf(nodes);
+        this.state = buildState(nodes, edges);
+    }
+
+    /**
+     * 原子替换整幅图（管理员导入校验通过后调用）。
+     * 新图构建失败时抛出异常，旧图保持不变。
+     */
+    public synchronized void updateGraph(Map<String, Node> nodes, List<Edge> edges) {
+        this.state = buildState(nodes, edges);
+    }
+
+    private static GraphState buildState(Map<String, Node> nodes, List<Edge> edges) {
+        Map<String, Node> copy = Map.copyOf(nodes);
+        Map<String, List<Neighbor>> adj;
         if (edges != null && !edges.isEmpty()) {
-            this.adjacency = buildGraphFromEdges(this.nodes, edges);
+            adj = buildGraphFromEdges(copy, edges);
         } else {
-            this.adjacency = buildGraph(this.nodes);
+            adj = buildGraph(copy);
         }
+        return new GraphState(copy, adj);
     }
 
     public List<Node> listNodes() {
-        return nodes.values().stream().sorted(Comparator.comparing(Node::getName)).toList();
+        return state.nodes.values().stream().sorted(Comparator.comparing(Node::getName)).toList();
     }
 
     public PathResult shortestPath(String fromId, String toId) {
+        GraphState snapshot = this.state;
+        Map<String, Node> nodes = snapshot.nodes;
+        Map<String, List<Neighbor>> adjacency = snapshot.adjacency;
         if (fromId == null || toId == null || !nodes.containsKey(fromId) || !nodes.containsKey(toId)) {
             throw new IllegalArgumentException("起点或终点不存在");
         }
@@ -96,13 +112,13 @@ public class GraphService {
         for (int i = 1; i < pathNodes.size(); i++) {
             Node a = pathNodes.get(i - 1);
             Node b = pathNodes.get(i);
-            segments.add(weightBetween(a.getId(), b.getId(), a.getLat(), a.getLng(), b.getLat(), b.getLng()));
+            segments.add(weightBetween(adjacency, a.getId(), b.getId(), a.getLat(), a.getLng(), b.getLat(), b.getLng()));
         }
 
         return new PathResult(fromId, toId, total, pathIds, pathNodes, segments);
     }
 
-    private double weightBetween(String fromId, String toId, double fromLat, double fromLng, double toLat, double toLng) {
+    private static double weightBetween(Map<String, List<Neighbor>> adjacency, String fromId, String toId, double fromLat, double fromLng, double toLat, double toLng) {
         for (Neighbor nb : adjacency.getOrDefault(fromId, List.of())) {
             if (nb.toId.equals(toId)) {
                 return nb.weightMeters;
@@ -236,6 +252,16 @@ public class GraphService {
 
     private static String pairKey(String a, String b) {
         return a.compareTo(b) < 0 ? a + "::" + b : b + "::" + a;
+    }
+
+    private static final class GraphState {
+        private final Map<String, Node> nodes;
+        private final Map<String, List<Neighbor>> adjacency;
+
+        private GraphState(Map<String, Node> nodes, Map<String, List<Neighbor>> adjacency) {
+            this.nodes = nodes;
+            this.adjacency = adjacency;
+        }
     }
 
     private static final class Neighbor {

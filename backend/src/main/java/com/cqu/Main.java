@@ -1,6 +1,7 @@
 package com.cqu;
 
 import com.cqu.handler.RequestHandler;
+import com.cqu.service.AdminImportService;
 import com.cqu.service.DataLoader;
 import com.cqu.service.Db;
 import com.cqu.service.GraphService;
@@ -28,12 +29,15 @@ public class Main {
         }
 
         GraphService graphService = new GraphService(repo.findAllAsMap(), dataLoader.loadEdgeListOrEmpty());
-        RequestHandler handler = new RequestHandler(graphService);
+        AdminImportService adminImportService = new AdminImportService(graphService, repo);
+        RequestHandler handler = new RequestHandler(graphService, adminImportService);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/api/health", handler::handleHealth);
         server.createContext("/api/nodes", handler::handleNodes);
         server.createContext("/api/path", handler::handlePath);
+        server.createContext("/api/admin/validate", handler::handleAdminValidate);
+        server.createContext("/api/admin/import", handler::handleAdminImport);
         server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
         server.start();
         logger.log(Level.INFO, "Backend started on port " + port);
