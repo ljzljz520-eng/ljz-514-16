@@ -3,6 +3,9 @@ package com.cqu;
 import com.cqu.handler.RequestHandler;
 import com.cqu.service.DataLoader;
 import com.cqu.service.Db;
+import com.cqu.service.GraphImportService;
+import com.cqu.service.GraphImportValidator;
+import com.cqu.service.GraphRegistry;
 import com.cqu.service.GraphService;
 import com.cqu.service.NodeRepository;
 import com.sun.net.httpserver.HttpServer;
@@ -28,12 +31,16 @@ public class Main {
         }
 
         GraphService graphService = new GraphService(repo.findAllAsMap(), dataLoader.loadEdgeListOrEmpty());
-        RequestHandler handler = new RequestHandler(graphService);
+        GraphRegistry graphRegistry = new GraphRegistry(graphService);
+        GraphImportService importService = new GraphImportService(new GraphImportValidator(), repo, graphRegistry);
+        RequestHandler handler = new RequestHandler(graphRegistry, importService);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/api/health", handler::handleHealth);
         server.createContext("/api/nodes", handler::handleNodes);
         server.createContext("/api/path", handler::handlePath);
+        server.createContext("/api/admin/import/validate", handler::handleAdminImportValidate);
+        server.createContext("/api/admin/import", handler::handleAdminImport);
         server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
         server.start();
         logger.log(Level.INFO, "Backend started on port " + port);

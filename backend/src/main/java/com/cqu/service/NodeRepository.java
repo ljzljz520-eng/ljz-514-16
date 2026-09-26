@@ -43,6 +43,28 @@ public class NodeRepository {
         }
     }
 
+    /**
+     * 全量替换节点表（单个事务内先清空再写入），供管理员导入使用。
+     */
+    public void replaceAll(List<Node> nodes) {
+        EntityManager em = emf.createEntityManager();
+        try {
+            em.getTransaction().begin();
+            em.createQuery("delete from Node n").executeUpdate();
+            for (Node n : nodes) {
+                em.persist(n);
+            }
+            em.getTransaction().commit();
+        } catch (RuntimeException e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            throw e;
+        } finally {
+            em.close();
+        }
+    }
+
     public List<Node> findAll() {
         EntityManager em = emf.createEntityManager();
         try {

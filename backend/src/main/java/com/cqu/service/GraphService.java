@@ -156,6 +156,7 @@ public class GraphService {
             adj.put(id, new ArrayList<>());
         }
 
+        Set<String> seenPairs = new HashSet<>();
         for (Edge e : edges) {
             if (e == null) {
                 continue;
@@ -163,6 +164,10 @@ public class GraphService {
             String from = e.getFromId();
             String to = e.getToId();
             if (from == null || to == null || !nodes.containsKey(from) || !nodes.containsKey(to) || from.equals(to)) {
+                continue;
+            }
+            // 同一无向连接只建一次（导入数据要求双向声明，避免邻接表出现重复边）
+            if (!seenPairs.add(pairKey(from, to))) {
                 continue;
             }
 
